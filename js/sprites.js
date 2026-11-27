@@ -318,6 +318,8 @@ function buildSprites() {
   SPR.slimeKing = anim([SLIME1, SLIME2], { P: '#b13e53', p: '#ef7d57', d: '#5d275d', w: '#ffcd75' });
   SPR.batLord = anim([BAT1, BAT2], { R: '#333c57', w: '#ffcd75' });
   SPR.titan = anim([GOLEM1, GOLEM2], { G: '#333c57', g: '#ef7d57', o: '#ffcd75' });
+  SPR.wraith = anim([BAT1, BAT2], { R: '#c9d6e3', w: '#3b5dc9' });
+  SPR.juggernaut = anim([GOLEM1, GOLEM2], { G: '#29366f', g: '#566c86', o: '#ef4f5f' });
   SPR.cup = makeSprite(CUP);
   SPR.heart5 = makeSprite(HEART5);
   SPR.coin5 = makeSprite(COIN5);

@@ -32,7 +32,7 @@ const world = {
   // effects
   ambient: [], ambAcc: 0, coinFx: [], coinBump: 0, flash: 0, warnT: 0, hurtT: 0,
   combo: 0, comboT: 0, comboShow: 0, collectGlow: 0, muzzle: 0,
-  ballFx: [], cd: {}, rainT: 0, infT: 0, goldPour: 0, cupBump: 0,
+  ballFx: [], cd: {}, rainT: 0, infT: 0, goldPour: 0, cupBump: 0, dropQueue: 0, dropAcc: 0,
   elem: { fire: 0, ice: 0, spark: 0, bomb: 0 }, elemRot: 0,
 };
 function clearElemAmmo() { for (const k of ELEMS) world.elem[k] = 0; }
@@ -45,7 +45,9 @@ function ready(key, sec) {
   return true;
 }
 
-// send n balls flying from (sx, sy) into the cup; they're added when they land
+// Bonus balls from skills never go into the cup (that let you pour forever).
+// They fly to the top of the pit and drop by themselves as "bonus" balls,
+// which the cup reload ignores and which can't retrigger ball-return skills.
 function giveBalls(n, sx, sy, label = true) {
   const w = world;
   n = Math.round(n);
@@ -54,9 +56,24 @@ function giveBalls(n, sx, sy, label = true) {
   for (let i = 0; i < parts; i++) {
     const val = Math.floor(n / parts) + (i < n % parts ? 1 : 0);
     if (w.ballFx.length < 40) w.ballFx.push({ sx: sx + rand(-3, 3), sy: sy + rand(-3, 3), t: -i * 0.05, dur: rand(0.45, 0.65), val, arc: rand(25, 50) });
-    else w.cupBalls += val;
+    else w.dropQueue += val;
   }
   if (label) addPop(w.cupX + 14, CUP_Y - 16, '+' + n, '#73eff7', 0.7);
+}
+
+// release queued bonus balls from just under the cup, a steady stream that needs no pouring
+function releaseDrops(dt) {
+  const w = world;
+  if (w.dropQueue <= 0) { w.dropAcc = 0; return; }
+  w.dropAcc += dt * 30;
+  while (w.dropAcc >= 1 && w.dropQueue > 0) {
+    w.dropAcc -= 1; w.dropQueue--;
+    const kind = rollBallKind(false);
+    w.balls.push({
+      x: w.cupX + rand(-4, 4), y: CUP_Y + 9, vx: rand(-15, 15), vy: rand(30, 50),
+      w: kindValue(kind), mask: 0, bm: 0, tele: false, rev: false, spr: 0, age: 0, kind, bonus: true,
+    });
+  }
 }
 
 const PALETTE_FX = ['#ef7d57', '#ffcd75', '#a7f070', '#73eff7', '#41a6f6', '#d6a8ff', '#f4f4f4'];
@@ -145,17 +162,18 @@ function startWave() {
   const bi = biomeIndex(S.wave);
   const newBiome = bi !== w.biomeIdx;
   if (newBiome) { w.biomeIdx = bi; renderSkyBg(); }
-  let idx = S.wave === 1 ? 0 : randi(0, LAYOUTS.length - 1);
-  if (idx === w.layoutIdx) idx = (idx + 1) % LAYOUTS.length;
+  const pool = layoutsFor(S.diff).filter(i => i !== w.layoutIdx);
+  let idx = S.wave === 1 ? 0 : pool[randi(0, pool.length - 1)];
   w.layoutIdx = idx;
   S.gateBonus = S.gateNext; S.gateNext = 0;
   S.tempAtk = S.tempAtkNext; S.tempAtkNext = 1;
   buildLayout(LAYOUTS[idx], S.gateBonus);
-  w.queue = buildWave(S.wave, diffOf().count);
+  w.queue = buildWave(S.wave, diffOf().count, S.diff);
   w.total = w.queue.length; w.killed = 0; w.waveT = 0; w.ammo = 0;
   w.cupBalls = S.cupSize; w.refillT = 0; w.fireT = 0; w.pourAcc = 0; clearElemAmmo();
   S.state = 'play'; S.hitThisWave = false;
   S.barrierLeft = S.barrier; w.smiteT = 0; w.rainT = 0; w.infT = 0; w.ballFx.length = 0; w.cd = {};
+  w.dropQueue = 0; w.dropAcc = 0;
   w.goldPour = 0;
   if (S.supply) { w.cupBalls += 20 * S.supply; addPop(w.cupX + 14, CUP_Y - 16, '+' + 20 * S.supply, '#73eff7', 1); }
   const boss = S.wave % 5 === 0;
@@ -173,7 +191,20 @@ function startWave() {
 function buildLayout(L, bonus) {
   const w = world;
   const wideK = 1 + 0.2 * ((S && S.gateWide) || 0);
-  const defs = L.gates.slice();
+  const defs = L.gates.map(g => Object.assign({}, g));
+  // difficulty reshapes the map a little: narrower/faster gates, locked or trap gates
+  const M = (S && diffOf().map) || {};
+  if (M.narrow && M.narrow < 1) defs.forEach(g => { const nw = g.w * M.narrow; g.x += (g.w - nw) / 2; g.w = nw; });
+  if (M.moveK) defs.forEach(g => { if (g.move) g.spd = (g.spd || 1) * M.moveK; });
+  const plain = g => !g.move && !g.trap && !g.goldify && !g.rev && !g.lock;
+  if (M.lockChance && Math.random() < M.lockChance) {
+    const c = defs.filter(plain).sort((a, b) => (b.m || 2) - (a.m || 2))[0];
+    if (c) { c.lock = 'weight'; c.need = M.need; c.m = (c.m || 2) + 1; }
+  }
+  if (M.trapChance && Math.random() < M.trapChance) {
+    const c = defs.filter(g => plain(g) && (g.m || 2) === 2);
+    if (c.length > 1) c[randi(0, c.length - 1)].trap = true;
+  }
   const bg = S ? S.bonusGate : 0;
   if (bg > 0) {
     const bw = 50 + 25 * bg;
@@ -216,6 +247,9 @@ function buildLayout(L, bonus) {
       x: gx, bx: gx, y: b.y, w: gw, m: (g.m || 2) + (g.bonusGate || special ? 0 : bonus),
       amp: b.amp, spd: g.spd || 1, ph: Math.random() * 6.28, flash: 0, bonus: !!g.bonusGate,
       trap: !!g.trap, goldify: !!g.goldify, rev: !!g.rev,
+      // lock: 'weight' opens once `need` balls rest on it; 'key' opens when a ball touches its key
+      lock: g.lock || null, locked: !!g.lock, need: g.need || 20, held: 0,
+      key: g.key ? { x: g.key[0] * LS, y: g.key[1] * LS } : null,
     };
   });
   // extra structures
@@ -286,6 +320,7 @@ function update(dt) {
   }
 
   updateStructures(dt);
+  if (playing) releaseDrops(dt);
 
   const steps = Math.max(2, Math.ceil(dt / 0.006));
   for (let i = 0; i < steps; i++) stepBalls(dt / steps);
@@ -293,9 +328,13 @@ function update(dt) {
   if (playing) {
     w.waveT += dt;
     while (w.queue.length && w.queue[0].t <= w.waveT) spawnEnemy(w.queue.shift().type);
-    if (w.cupBalls === 0 && w.balls.length === 0 && w.ammo <= 0) {
+    // Reload only looks at the cup's own balls: bonus drops and balls held on a weight lock don't count.
+    // Normally we also wait for the ammo to run out, but never longer than 2.5s once the pit is clear.
+    const cupBallsLeft = w.balls.some(b => !b.bonus && !b.holdGate);
+    if (w.cupBalls === 0 && !cupBallsLeft) {
       w.refillT += dt;
-      if (w.refillT > (S.quickReload ? 0.15 : 0.8)) {
+      const wait = w.ammo <= 0 ? (S.quickReload ? 0.15 : 0.8) : 2.5;
+      if (w.refillT > wait) {
         w.cupBalls = Math.round(S.cupSize * (1 + 0.2 * S.quickReload)); w.refillT = 0;
         if (S.nova) novaBlast();
         if (S.overcharge) w.goldPour = Math.round(w.cupBalls * 0.15 * S.overcharge);
@@ -438,7 +477,7 @@ function kindValue(kind) {
   return v;
 }
 
-function rollBallKind() {
+function rollBallKind(useGoldPour = true) {
   const w = world, r = Math.random;
   if (S.diamond && r() < 0.005 * S.diamond) return 5;
   if (S.rainbow && r() < 0.02 * S.rainbow) return 2;
@@ -446,7 +485,7 @@ function rollBallKind() {
     if (lv && r() < p * lv) return k;
   }
   if (S.ruby && r() < 0.04 * S.ruby) return 4;
-  if (w.goldPour > 0 || r() < S.gold) { if (w.goldPour > 0) w.goldPour--; return 1; }
+  if ((useGoldPour && w.goldPour > 0) || r() < S.gold) { if (useGoldPour && w.goldPour > 0) w.goldPour--; return 1; }
   if (S.silver && r() < 0.15 * S.silver) return 3;
   return 0;
 }
@@ -486,7 +525,7 @@ function spawnClones(b, n, spread = 50, xmin = -1e9, xmax = 1e9) {
     w.balls.push({
       x: clamp(b.x + rand(-2, 2), xmin, xmax), y: b.y + 0.5,
       vx: b.vx + rand(-spread, spread), vy: b.vy * rand(0.75, 1),
-      w: w0, mask: b.mask, bm: b.bm, tele: b.tele, rev: b.rev, spr: b.spr, age: 0, kind: b.kind,
+      w: w0, mask: b.mask, bm: b.bm, tele: b.tele, rev: b.rev, spr: b.spr, age: 0, kind: b.kind, bonus: b.bonus,
     });
   }
   if (k < n) b.w += (n - k) * w0;
@@ -517,6 +556,8 @@ function stepBalls(dt) {
   const w = world, balls = w.balls, gates = w.gates, segs = w.segs;
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
+    // balls resting on a weight lock stay frozen in place until it opens (never collected, never block reload)
+    if (b.holdGate) { if (b.holdGate.locked) continue; b.holdGate = null; }
     b.age += dt;
     const py = b.y;
     b.vy += GRAV * dt;
@@ -548,6 +589,10 @@ function stepBalls(dt) {
         const gt = gates[g];
         if (b.mask & (1 << g)) continue;
         if (py < gt.y && b.y >= gt.y && b.x >= gt.x && b.x <= gt.x + gt.w) {
+          if (gt.locked) {
+            if (gt.lock === 'weight') { holdBall(b, gt); break; }
+            b.mask |= 1 << g; continue; // key lock: the ball just drops through, nothing happens
+          }
           const firstGate = b.mask === 0;
           b.mask |= 1 << g;
           if (gt.trap) {
@@ -564,6 +609,12 @@ function stepBalls(dt) {
           }
         }
       }
+    }
+    // key locks: any ball touching the key opens its gate
+    for (const gt of gates) {
+      if (!gt.locked || !gt.key) continue;
+      const dx = b.x - gt.key.x, dy = b.y - gt.key.y;
+      if (dx * dx + dy * dy < 81) unlockGate(gt);
     }
     // clone bumpers: bounce, and split the ball once per bumper
     for (let k = 0; k < w.bumpers.length; k++) {
@@ -630,6 +681,37 @@ function stepBalls(dt) {
   }
 }
 
+// park a ball on a locked weight gate, stacked in neat rows above the bar
+function holdBall(b, gt) {
+  const idx = gt.held++;
+  const cols = Math.max(1, Math.floor((gt.w - 4) / 4));
+  const row = Math.floor(idx / cols);
+  b.holdGate = gt;
+  b.x = gt.x + 3 + (idx % cols) * 4 + (row % 2) * 2;
+  b.y = gt.y - 9 - Math.min(row, 5) * 3;
+  b.vx = 0; b.vy = 0;
+  SFX.play('bump');
+  if (gt.held >= gt.need) unlockGate(gt);
+}
+
+function unlockGate(gt) {
+  const w = world;
+  if (!gt.locked) return;
+  gt.locked = false;
+  gt.flash = 0.35;
+  for (const b of w.balls) {
+    if (b.holdGate === gt) { b.holdGate = null; b.vx = rand(-25, 25); b.vy = rand(20, 60); }
+  }
+  const cx = gt.x + gt.w / 2;
+  addPop(cx, gt.y - 18, 'UNLOCK', '#ffcd75', 1, 2);
+  for (let k = 0; k < 16 && w.parts.length < 320; k++) {
+    w.parts.push({ x: cx + rand(-gt.w / 2, gt.w / 2), y: gt.y, vx: rand(-40, 40), vy: rand(-90, -20), life: 0.5, max: 0.5, col: k % 2 ? '#ffcd75' : '#f4f4f4', g: 220 });
+  }
+  if (gt.key) gt.keyGot = true;
+  w.shake = Math.max(w.shake, 3);
+  SFX.play('achieve');
+}
+
 function multiplyBall(b, gt, extra = 0) {
   const w = world;
   if (S && S.alchemy && Math.random() < 0.04 * S.alchemy && upgradeBall(b) && w.parts.length < 280) {
@@ -639,8 +721,10 @@ function multiplyBall(b, gt, extra = 0) {
   b.vx += rand(-18, 18);
   gt.flash = 0.1;
   if (S && S.gateJackpot && Math.random() < 0.02 * S.gateJackpot && ready('jackpot', 2.5)) {
+    // jackpot: a burst of extra balls pours straight out of this gate
     addPop(b.x, gt.y - 12, 'JACKPOT', '#ffcd75', 0.9, 2);
-    giveBalls(8, b.x, gt.y);
+    spawnClones(b, 8, 80, gt.x + 1, gt.x + gt.w - 1);
+    for (let k = 0; k < 10 && w.parts.length < 300; k++) w.parts.push({ x: b.x, y: gt.y, vx: rand(-60, 60), vy: rand(-70, -20), life: 0.4, max: 0.4, col: k % 2 ? '#ffcd75' : '#f4f4f4', g: 200 });
   }
   if (Math.random() < 0.3 && w.parts.length < 260) {
     w.parts.push({ x: b.x, y: gt.y - 3, vx: rand(-20, 20), vy: rand(-45, -15), life: 0.25, max: 0.25, col: gt.bonus ? '#ffcd75' : '#f4f4f4', g: 120 });
@@ -669,11 +753,12 @@ function collectBall(b) {
   let mult = 1;
   for (const z of w.zones) if (b.x >= z.x0 && b.x < z.x1) { mult = z.m; break; }
   if (S.doubleFloor && mult < 2 && b.x > WALL_L + (WALL_R - WALL_L) / 3 && b.x < WALL_L + (WALL_R - WALL_L) * 2 / 3) mult = 2;
-  if (S.recycle && Math.random() < 0.08 * S.recycle && w.cupBalls < S.cupSize * 2) w.cupBalls++;
+  // only the cup's own balls can come back, and they come back as bonus drops, so this can't loop
+  if (S.recycle && !b.bonus && Math.random() < 0.08 * S.recycle) w.dropQueue++;
   if (mult > 1) { b.w *= mult; if (Math.random() < 0.3 && w.parts.length < 300) w.parts.push({ x: b.x, y: H - 10, vx: 0, vy: -40, life: 0.3, max: 0.3, col: '#ffcd75', g: 0 }); }
   w.ammo += b.w;
   w.collectGlow = Math.min(1, w.collectGlow + 0.04 * Math.min(b.w, 10));
-  if (b.kind === 1 && S.goldChain && ready('goldChain', 0.25)) giveBalls(1, b.x, H - 8, false);
+  if (b.kind === 1 && !b.bonus && S.goldChain && ready('goldChain', 0.25)) giveBalls(1, b.x, H - 8, false);
   const el = BALL_KINDS[b.kind].elem;
   if (el) w.elem[el] += b.w * mult;
   if (b.kind === 2 && S.prism) { for (const k of ELEMS) w.elem[k] += 10; w.ammo += 40; addPop(b.x, H - 24, 'PRISM', '#d6a8ff', 0.8); }
@@ -697,6 +782,7 @@ function collectBall(b) {
 function pickTarget(exclude) {
   let best = null;
   for (const e of world.enemies) {
+    if (e.phased) continue;
     if (e.hp > 0 && e !== exclude && e.x < W - 6 && (!best || e.x < best.x)) best = e;
   }
   return best;
@@ -763,7 +849,7 @@ function updateArrows(dt) {
     a.x += a.vx * dt; a.y += a.vy * dt;
     let dead = false;
     for (const e of w.enemies) {
-      if (e.hp <= 0 || a.hits.includes(e.id)) continue;
+      if (e.hp <= 0 || e.phased || a.hits.includes(e.id)) continue;
       if (a.x >= e.x - 1 && a.x <= e.x + e.w + 1 && a.y >= e.y - 1 && a.y <= e.y + e.h + 1) {
         a.hits.push(e.id);
         const before = e.hp;
@@ -789,11 +875,12 @@ function hitEnemy(e, a) {
   if (e.boss && S.bossDmg) dmg *= 1 + 0.5 * S.bossDmg;
   if (S.snipe && e.x > W * 0.5) dmg *= 1 + 0.4 * S.snipe;
   if (S.poison) { e.poisonDps = Math.max(e.poisonDps || 0, a.dmg * 0.1 * S.poison); e.poisonT = 3; }
-  if (S.knockback && !e.boss) e.x = Math.min(W + 6, e.x + 3 * S.knockback);
+  // knockback: each enemy can only be pushed once every 0.7s, a little further per level
+  if (S.knockback && !e.boss && !e.unstoppable && !(e.kbT > 0)) { e.x = Math.min(W + 6, e.x + [0, 4, 6, 8][Math.min(3, S.knockback)]); e.kbT = 0.7; }
   if (e.armor) dmg *= 1 - e.armor;
   damageEnemy(e, dmg, a.crit);
   if (a.elem && !e.dead) applyElem(e, a);
-  if (S.frost) e.slowT = 2;
+  if (S.frost && !e.unstoppable) e.slowT = 2;
   if (S.splash) splashAround(e, a.dmg * 0.3 * S.splash);
   if (S.chain && Math.random() < 0.05 + 0.1 * S.chain) chainFrom(e, a.dmg * 0.5);
   if (S.execute && e.hp > 0 && !e.boss && e.hp <= e.maxHp * 0.15) {
@@ -810,8 +897,8 @@ function applyElem(e, a) {
   const all = a.elem === 'all';
   if (all || a.elem === 'fire') { e.burnDps = Math.max(e.burnDps || 0, a.dmg * 0.15 * amp); e.burnT = 3; }
   if (all || a.elem === 'ice') {
-    e.slowT = Math.max(e.slowT, 2);
-    if (!e.boss && Math.random() < 0.08 * amp) { e.freezeT = 1.2; addPop(e.x + e.w / 2, e.y - 10, 'FREEZE', '#73eff7', 0.5, 1); }
+    if (!e.unstoppable) e.slowT = Math.max(e.slowT, 2);
+    if (!e.boss && !e.unstoppable && Math.random() < 0.08 * amp) { e.freezeT = 1.2; addPop(e.x + e.w / 2, e.y - 10, 'FREEZE', '#73eff7', 0.5, 1); }
   }
   if (all || a.elem === 'spark') chainFrom(e, a.dmg * 0.4 * amp, 2);
   if (all || a.elem === 'bomb') {
@@ -873,6 +960,16 @@ function spawnEnemy(type, at) {
     atkT: 0.3, atkCD: d.boss ? 1.6 : 1.1, abT: 2.5, flash: 0, anim: Math.random() * 3, lunge: 0, slowT: 0,
     stopX: HERO_X + HERO_W + 4 + rand(0, 12) + (d.boss ? 4 : 0), state: 'walk', splits: 0, dead: false,
   };
+  e.phase = !!d.phase; e.unstoppable = !!d.unstoppable; e.phaseT = rand(0, 3);
+  const rank = DIFF_RANK[S.diff] || 0;
+  // harder difficulties: some ordinary enemies spawn as elites with an extra trait
+  if (!e.boss && !at && S.wave >= 3 && Math.random() < D.elite) {
+    e.elite = pickOf(['swift', 'stone', 'regen']);
+    e.hp *= 2.2; e.coin *= 3;
+    if (e.elite === 'swift') e.spd *= 1.5;
+    if (e.elite === 'stone') e.armor = Math.min(0.75, e.armor + 0.35);
+  }
+  if (e.boss) { e.enrage = rank >= 1; if (rank >= 2 && !e.summon) e.summon = 'slime'; }
   e.maxHp = e.hp;
   if (e.fly) e.baseY = GROUND_Y - e.h - (d.boss ? 34 : rand(18, 40));
   else e.baseY = GROUND_Y - e.h;
@@ -1013,6 +1110,7 @@ function updateEnemies(dt) {
     e.flash = Math.max(0, e.flash - dt);
     e.lunge = Math.max(0, e.lunge - dt);
     e.slowT = Math.max(0, e.slowT - dt);
+    if (e.kbT > 0) e.kbT -= dt;
     e.anim += dt;
     if (e.poisonT > 0 && e.hp > 0 && !e.dead) {
       e.poisonT -= dt;
@@ -1040,6 +1138,13 @@ function updateEnemies(dt) {
     if (e.hp <= 0) continue;
     if (e.freezeT > 0) { e.freezeT -= dt; continue; } // frozen solid: no moving, no attacking
     if (e.fly) e.y = e.baseY + Math.sin(e.anim * 5) * 2;
+    if (e.phase) { e.phaseT += dt; e.phased = (e.phaseT % 3) > 2; } // wraith: 1s of every 3s it can't be hit
+    if (e.elite === 'regen') e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.03 * dt);
+    if (e.enrage && !e.enraged && e.hp < e.maxHp * 0.5) {
+      e.enraged = true; e.spd *= 1.6; e.atkCD *= 0.7;
+      addPop(e.x + e.w / 2, e.y - 16, 'ENRAGE', '#ef4f5f', 1, 2);
+      world.shake = Math.max(world.shake, 5);
+    }
 
     // abilities
     if (e.healer || e.summon) {
@@ -1180,7 +1285,7 @@ function updateFx(dt) {
     const f = w.ballFx[i];
     f.t += dt;
     if (f.t >= f.dur) {
-      w.cupBalls += f.val; w.cupBump = 0.12;
+      w.dropQueue += f.val; w.cupBump = 0.12;
       w.ballFx[i] = w.ballFx[w.ballFx.length - 1]; w.ballFx.pop();
       SFX.play('bump');
     }
@@ -1529,7 +1634,17 @@ function drawEnemies() {
     const fr = Math.floor(e.anim * (e.state === 'walk' ? 5 : 3)) % 2;
     const img = e.flash > 0 ? set.flash[fr] : set.frames[fr];
     const lx = e.lunge > 0 ? -2 : 0;
+    if (e.phased) ctx.globalAlpha = 0.3;
     ctx.drawImage(img, Math.round(e.x + lx), Math.round(e.y), e.w, e.h);
+    ctx.globalAlpha = 1;
+    if (e.elite) { // pulsing elite frame, color by trait
+      ctx.globalAlpha = 0.55 + 0.35 * Math.sin(world.t * 6 + e.id);
+      ctx.fillStyle = e.elite === 'swift' ? '#73eff7' : e.elite === 'stone' ? '#ffcd75' : '#a7f070';
+      const ex = Math.round(e.x + lx) - 2, ey = Math.round(e.y) - 2;
+      ctx.fillRect(ex, ey, e.w + 4, 1); ctx.fillRect(ex, ey + e.h + 3, e.w + 4, 1);
+      ctx.fillRect(ex, ey, 1, e.h + 4); ctx.fillRect(ex + e.w + 3, ey, 1, e.h + 4);
+      ctx.globalAlpha = 1;
+    }
     if (e.freezeT > 0) {
       ctx.globalAlpha = 0.55; ctx.fillStyle = '#73eff7';
       ctx.fillRect(Math.round(e.x), Math.round(e.y), e.w, e.h);
@@ -1577,6 +1692,7 @@ function drawBolts() {
 }
 
 function gateLook(g) {
+  if (g.locked) return { col: '#566c86', label: '', dark: false };
   if (g.trap) return { col: '#b13e53', label: '/2', dark: false };
   if (g.goldify) return { col: '#f4b41b', label: 'GOLD', dark: true };
   if (g.rev) return { col: '#73eff7', label: '^x' + g.m, dark: true };
@@ -1602,9 +1718,33 @@ function drawGates() {
       ctx.fillStyle = '#c8a26b'; ctx.fillRect(px - 1, y - 9, 2, 19);
       ctx.fillStyle = '#f0d7a1'; ctx.fillRect(px - 1, y - 9, 1, 19);
     }
+    if (g.locked) {
+      // padlock on the left of the bar, then the progress (weight) or the reward multiplier (key)
+      const lx = x + 4, ly = y - 4;
+      ctx.fillStyle = '#1a1c2c'; ctx.fillRect(lx, ly + 2, 9, 7); ctx.fillRect(lx + 1, ly - 2, 7, 5);
+      ctx.fillStyle = '#94b0c2'; ctx.fillRect(lx + 2, ly - 1, 5, 1); ctx.fillRect(lx + 2, ly - 1, 1, 3); ctx.fillRect(lx + 6, ly - 1, 1, 3);
+      ctx.fillStyle = '#ffcd75'; ctx.fillRect(lx + 1, ly + 3, 7, 5);
+      ctx.fillStyle = '#1a1c2c'; ctx.fillRect(lx + 4, ly + 4, 1, 2);
+      const label = g.lock === 'weight' ? g.held + '/' + g.need : 'x' + g.m;
+      drawText(ctx, label, x + gw / 2 + 6, y - 4, '#e8eef5', 2, 'center', '_#1a1c2c');
+      continue;
+    }
     const s = textWidth(look.label, 2) <= gw - 8 ? 2 : 1;
     const tc = g.flash > 0 || look.dark ? '#1a1c2c' : '#f4f4f4';
     drawText(ctx, look.label, x + gw / 2, y - (s === 2 ? 4 : 2), tc, s, 'center', g.flash > 0 || look.dark ? null : '_#1a1c2c');
+  }
+  // floating keys for key-locked gates
+  for (const g of world.gates) {
+    if (!g.locked || !g.key) continue;
+    const kx = Math.round(g.key.x), ky = Math.round(g.key.y + Math.sin(world.t * 3) * 2);
+    ctx.globalAlpha = 0.25 + 0.15 * Math.sin(world.t * 5);
+    pxDisc(kx, ky, 9, '#ffcd75');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#1a1c2c';
+    ctx.fillRect(kx - 6, ky - 4, 7, 7); ctx.fillRect(kx, ky - 1, 8, 3); ctx.fillRect(kx + 4, ky + 1, 2, 3); ctx.fillRect(kx + 7, ky + 1, 2, 3);
+    ctx.fillStyle = '#ffcd75';
+    ctx.fillRect(kx - 5, ky - 3, 5, 5); ctx.fillRect(kx, ky, 8, 1); ctx.fillRect(kx + 5, ky + 1, 1, 2); ctx.fillRect(kx + 7, ky + 1, 1, 2);
+    ctx.fillStyle = '#1a1c2c'; ctx.fillRect(kx - 3, ky - 1, 1, 1);
   }
 }
 

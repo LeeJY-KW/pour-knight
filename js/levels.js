@@ -123,13 +123,61 @@ const LAYOUTS = [
     springs: [[10, 344, 42, 360]],
     segs: [],
   },
+  // ---- lock gates: 'weight' opens when `need` balls rest on it, 'key' opens when a ball touches its key
+  {
+    name: 'vault',
+    gates: [
+      { x: 14, y: 176, w: 70, m: 2 }, { x: 132, y: 176, w: 70, m: 2 },
+      { x: 70, y: 252, w: 76, m: 5, lock: 'weight', need: 24 },
+      { x: 20, y: 322, w: 80, m: 2 }, { x: 116, y: 322, w: 80, m: 2 },
+    ],
+    segs: [[10, 212, 60, 236], [206, 212, 156, 236]],
+  },
+  {
+    name: 'key run',
+    gates: [
+      { x: 30, y: 176, w: 150, m: 2 },
+      { x: 62, y: 276, w: 92, m: 4, lock: 'key', key: [196, 232] },
+      { x: 40, y: 332, w: 136, m: 2 },
+    ],
+    segs: [[10, 236, 46, 258]],
+  },
+  // ---- harder difficulties only
+  {
+    name: 'gauntlet', minDiff: 'hard',
+    gates: [
+      { x: 16, y: 178, w: 56, m: 3 }, { x: 82, y: 178, w: 52, trap: true }, { x: 144, y: 178, w: 56, m: 3 },
+      { x: 26, y: 252, w: 64, trap: true }, { x: 126, y: 252, w: 64, m: 3 },
+      { x: 58, y: 324, w: 100, m: 4, lock: 'weight', need: 22 },
+    ],
+    segs: [[76, 194, 76, 232], [140, 194, 140, 232]],
+  },
+  {
+    name: 'labyrinth', minDiff: 'nightmare',
+    gates: [
+      { x: 28, y: 172, w: 160, m: 2 },
+      { x: 18, y: 252, w: 60, m: 5, lock: 'key', key: [178, 300] },
+      { x: 138, y: 252, w: 60, trap: true },
+      { x: 80, y: 334, w: 56, m: 3 },
+    ],
+    segs: [[88, 196, 88, 300], [128, 196, 128, 300]],
+  },
 ];
+const DIFF_RANK = { normal: 0, hard: 1, nightmare: 2 };
+function layoutsFor(diffKey) {
+  const r = DIFF_RANK[diffKey] || 0;
+  return LAYOUTS.map((L, i) => i).filter(i => (DIFF_RANK[LAYOUTS[i].minDiff] || 0) <= r);
+}
 
 // Difficulty presets: multipliers on enemy hp/dmg/speed/count, between-wave heal, gem reward
 const DIFFS = {
-  normal: { name: '보통', tag: '', color: '#a7f070', hp: 1, dmg: 1, spd: 1, count: 1, heal: 0.05, gem: 1, unlockBy: null },
-  hard: { name: '어려움', tag: 'HARD', color: '#ef7d57', hp: 1.45, dmg: 1.3, spd: 1.1, count: 1.2, heal: 0.03, gem: 1.6, unlockBy: 'normal' },
-  nightmare: { name: '악몽', tag: 'NIGHTMARE', color: '#ef4f5f', hp: 2.1, dmg: 1.5, spd: 1.2, count: 1.35, heal: 0, gem: 2.5, unlockBy: 'hard' },
+  // map: narrower gates, faster moving gates, chance to lock / trap a gate.  elite: chance an enemy spawns as an elite
+  normal: { name: '보통', tag: '', color: '#a7f070', hp: 1, dmg: 1, spd: 1, count: 1, heal: 0.05, gem: 1, unlockBy: null,
+    map: {}, elite: 0, earlier: 0 },
+  hard: { name: '어려움', tag: 'HARD', color: '#ef7d57', hp: 1.35, dmg: 1.3, spd: 1.1, count: 1.2, heal: 0.03, gem: 1.6, unlockBy: 'normal',
+    map: { narrow: 0.88, moveK: 1.25, lockChance: 0.45, need: 18 }, elite: 0.12, earlier: 1 },
+  nightmare: { name: '악몽', tag: 'NIGHTMARE', color: '#ef4f5f', hp: 1.75, dmg: 1.5, spd: 1.2, count: 1.35, heal: 0, gem: 2.5, unlockBy: 'hard',
+    map: { narrow: 0.84, moveK: 1.4, lockChance: 0.7, trapChance: 0.35, need: 24 }, elite: 0.2, earlier: 2 },
 };
 
 // One biome per 10 waves (cycles). Purely visual.
@@ -171,6 +219,9 @@ const ETYPES = {
   golemKing: { spr: 'golemKing', hp: 240, spd: 6, dmg: 5, coin: 45, w: 12, h: 14, scale: 2, boss: true, color: '#ef7d57' },
   slimeKing: { spr: 'slimeKing', hp: 210, spd: 7, dmg: 4, coin: 45, w: 12, h: 10, scale: 2, boss: true, kingSplit: true, color: '#b13e53' },
   batLord: { spr: 'batLord', hp: 170, spd: 8, dmg: 4, coin: 45, w: 12, h: 8, scale: 2, boss: true, fly: true, summon: 'bat', color: '#566c86' },
+  // harder-difficulty monsters
+  wraith: { spr: 'wraith', hp: 14, spd: 24, dmg: 2, coin: 5, w: 12, h: 8, fly: true, phase: true, color: '#c9d6e3' },
+  juggernaut: { spr: 'juggernaut', hp: 120, spd: 7, dmg: 6, coin: 12, w: 12, h: 14, armor: 0.3, unstoppable: true, color: '#566c86' },
   titan: { spr: 'titan', hp: 480, spd: 5, dmg: 7, coin: 120, w: 12, h: 14, scale: 3, boss: true, summon: 'wolf', final: true, color: '#ef7d57' },
 };
 const BOSSES = ['golemKing', 'slimeKing', 'batLord', 'titan']; // waves 5, 10, 15, 20 (final)
@@ -184,17 +235,23 @@ const ROSTER = [
   { type: 'splitter', from: 9, w: () => 3 },
   { type: 'shield', from: 10, w: () => 3 },
   { type: 'shaman', from: 12, w: () => 2 },
+  { type: 'wraith', from: 5, w: () => 3, minDiff: 'hard' },
+  { type: 'juggernaut', from: 9, w: () => 2, minDiff: 'nightmare' },
 ];
 
-function pickEnemyType(n) {
-  const pool = ROSTER.filter(r => n >= r.from).map(r => ({ t: r.type, w: r.w(n) }));
+function pickEnemyType(n, diffKey = 'normal') {
+  const D = DIFFS[diffKey] || DIFFS.normal;
+  const rank = DIFF_RANK[diffKey] || 0;
+  // harder difficulties bring every monster in a little earlier, plus their own monsters
+  const pool = ROSTER.filter(r => (DIFF_RANK[r.minDiff] || 0) <= rank && n >= r.from - D.earlier)
+    .map(r => ({ t: r.type, w: r.w(n) }));
   const total = pool.reduce((a, p) => a + p.w, 0);
   let r = Math.random() * total;
   for (const p of pool) { r -= p.w; if (r <= 0) return p.t; }
   return pool[0].t;
 }
 
-function buildWave(n, countMul = 1) {
+function buildWave(n, countMul = 1, diffKey = 'normal') {
   const q = [];
   const boss = n % 5 === 0;
   let count = Math.round(Math.min(8 + Math.floor(n * 2.1), 60) * countMul);
@@ -202,7 +259,7 @@ function buildWave(n, countMul = 1) {
   let t = 0.8;
   const pace = Math.max(0.45, 1 - n * 0.015) / Math.sqrt(countMul);
   for (let i = 0; i < count; i++) {
-    q.push({ t, type: pickEnemyType(n) });
+    q.push({ t, type: pickEnemyType(n, diffKey) });
     t += (i % 5 === 4) ? 1.4 + Math.random() * 0.7 : (0.3 + Math.random() * 0.3) * pace;
   }
   if (boss) q.push({ t: 3, type: BOSSES[Math.min(BOSSES.length - 1, n / 5 - 1)] });
