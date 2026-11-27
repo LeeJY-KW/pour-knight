@@ -89,7 +89,6 @@ function showTitle() {
   showOverlay(`
     <div class="panel">
       ${logoHTML()}
-      <p class="sub">컵을 기울여 구슬을 붓고, 배수 게이트로 불려서<br>몰려오는 몬스터 웨이브를 막아내라!</p>
       ${run ? `<button class="btn big" data-act="continue">이어하기 · WAVE ${run.S.wave + 1}</button><br>` : ''}
       ${cps.length > 1 ? `<div class="chips">시작 웨이브
         ${cps.map(c => `<button class="chip ${c === titleStart ? 'on' : ''}" data-act="cp" data-c="${c}">${c}</button>`).join('')}
@@ -119,51 +118,47 @@ function showHelp() {
     <div class="panel">
       <h2>도움말</h2>
       <div class="howto">
-        <div>• <b>누르고 있기</b> : 컵 기울여 붓기</div>
-        <div>• <b>좌우 드래그</b> : 컵 이동</div>
-        <div>• 게이트(x2, x3…)를 지나면 구슬이 늘어남</div>
-        <div>• 바닥에 닿은 구슬 = 기사의 화살</div>
-        <div>• 남은 피해량은 다음 적에게 넘어감</div>
-        <div>• 웨이브 클리어 → 코인으로 스킬 구매</div>
-        <div>• 한 판은 <b>${RUN_WAVES}웨이브</b>. 마지막 웨이브의 거인을 쓰러뜨리면 승리</div>
-        <div>• 5웨이브마다 보스, 4웨이브마다 새 지역</div>
-        <div>• 게임이 끝나면 <b>보석</b> 획득 → 캠프에서 영구 강화</div>
-        <div>• 보통을 깨면 어려움, 어려움을 깨면 악몽이 열림</div>
-        <div>• 스킬을 최대 레벨까지 올리면 <b>전설 진화 스킬</b>이 상점에 등장</div>
-        <div>• 상점에 들어갈 때마다 자동 저장</div>
-        <div style="opacity:.75">PC: ←/→ 이동 · Space 붓기 · P 일시정지 · M 소리</div>
+        <div>• 화면을 <b>누르고 있으면</b> 컵을 기울여 구슬을 붓고, <b>좌우로 끌면</b> 컵이 움직입니다.</div>
+        <div>• 게이트를 지난 구슬은 적힌 배수만큼 늘어납니다.</div>
+        <div>• 바닥에 닿은 구슬은 기사의 화살이 됩니다.</div>
+        <div>• 적을 쓰러뜨리고 남은 피해는 다음 적에게 이어집니다.</div>
+        <div>• 웨이브를 깨면 코인으로 스킬을 살 수 있습니다.</div>
+        <div>• 한 판은 <b>${RUN_WAVES}웨이브</b>이고, 마지막 거인을 쓰러뜨리면 승리합니다.</div>
+        <div>• 5웨이브마다 보스가 나오고, 4웨이브마다 지역이 바뀝니다.</div>
+        <div>• 게임이 끝나면 <b>보석</b>을 받고, 캠프에서 영구 강화에 씁니다.</div>
+        <div>• 스킬을 끝까지 올리면 상점에 <b>전설 진화</b>가 나타납니다.</div>
+        <div>• 상점에 들어갈 때마다 자동으로 저장됩니다.</div>
+        <div style="opacity:.75">PC에서는 방향키로 움직이고 스페이스로 붓습니다. P는 일시정지, M은 음악입니다.</div>
       </div>
       <div class="howto">
-        <div><b>구슬 종류</b> (스킬로 등장 확률을 올림)</div>
+        <div><b>구슬 종류</b></div>
         <div>${ballDot('#f4f4f4')} 흰 x1 · ${ballDot('#c9d6e3')} 은 x2 · ${ballDot('#ffcd75')} 금 x3 · ${ballDot('#ef4f5f')} 루비 x5</div>
         <div><span class="bdot rainbowdot"></span> 무지개 x10 · ${ballDot('#e8fbff')} 다이아몬드 x25</div>
-        <div><b>원소 구슬</b> → 그 구슬로 만든 화살에 효과가 붙음</div>
-        <div>${ballDot('#ef7d57')} 화염: 화상 · ${ballDot('#73eff7')} 얼음: 감속·빙결</div>
-        <div>${ballDot('#ffe66d')} 번개: 주변 2명 감전 · ${ballDot('#94b0c2')} 폭탄: 폭발</div>
-        <div style="opacity:.75">원소 탄약은 기사 머리 위에 색깔 칩으로 표시됩니다</div>
+        <div>원소 구슬로 쏜 화살에는 그 원소의 힘이 깃듭니다.</div>
+        <div>${ballDot('#ef7d57')} 화염은 적을 태우고, ${ballDot('#73eff7')} 얼음은 느리게 하거나 얼립니다.</div>
+        <div>${ballDot('#ffe66d')} 번개는 주변으로 튀고, ${ballDot('#94b0c2')} 폭탄은 터집니다.</div>
+        <div style="opacity:.75">모아 둔 원소 탄약은 기사 머리 위에 색깔로 보입니다.</div>
       </div>
       <div class="howto">
         <div><b>구덩이 장치</b></div>
-        <div>• <b>x2 / x3 게이트</b> : 지나간 구슬이 배수만큼 늘어남</div>
-        <div>• <b>^x2 리버스 게이트</b> : 늘린 뒤 위로 튕겨 올려서 위쪽 게이트를 한 번 더 통과</div>
-        <div>• <b>스프링</b> : 구슬을 다시 위로 발사 (처음 한 번은 위쪽 게이트 재통과 가능)</div>
-        <div>• <b>x2 범퍼</b> : 부딪힌 구슬이 둘로 분열</div>
-        <div>• <b>포털 IN → OUT</b> : 위로 순간이동해서 게이트를 다시 통과</div>
-        <div>• <b>GOLD 게이트</b> : 구슬이 황금 구슬(가치 3배)로 바뀜</div>
-        <div>• <b>/2 함정 게이트</b> : 구슬 절반이 사라짐 → 피해서 부으세요</div>
-        <div>• <b>회전 막대</b> : 구슬을 쳐냄 · <b>바닥 x2/x3 구역</b> : 거기 떨어진 구슬 가치 배수</div>
+        <div>• <b>리버스 게이트</b>는 구슬을 늘린 뒤 위로 튕겨 올립니다.</div>
+        <div>• <b>스프링</b>도 구슬을 다시 위로 쏘아 올립니다.</div>
+        <div>• <b>범퍼</b>에 부딪힌 구슬은 둘로 나뉩니다.</div>
+        <div>• <b>포털</b>에 들어간 구슬은 위쪽 출구로 다시 나옵니다.</div>
+        <div>• <b>GOLD 게이트</b>를 지나면 금 구슬이 됩니다.</div>
+        <div>• 빨간 <b>함정 게이트</b>는 구슬을 절반 없애니 피해서 부으세요.</div>
+        <div>• 바닥의 노란 구역에 떨어진 구슬은 가치가 배로 오릅니다.</div>
       </div>
       <div class="howto">
         <div><b>난이도</b></div>
-        <div>보통 → (클리어) → 어려움 보석 x1.6 → (클리어) → 악몽 보석 x2.5, 웨이브 사이 회복 없음</div>
+        <div>보통을 깨면 어려움이, 어려움을 깨면 악몽이 열립니다. 어려울수록 보석을 더 많이 받습니다.</div>
       </div>
       <div class="howto">
         <div><b>적 도감</b></div>
-        <div>슬라임 · 박쥐(비행) · 늑대(빠름) · 골렘(단단함)</div>
-        <div>폭탄병(닿으면 폭발) · 분열 슬라임(죽으면 2마리)</div>
-        <div>방패 해골(받는 피해 60% 감소)</div>
-        <div>주술사(주변 적 회복 → 먼저 처치)</div>
-        <div>보스: 골렘 왕(W5) · 슬라임 왕(W10, 분열) · 박쥐 군주(W15, 소환) · 화산 거인(W20, 늑대 소환)</div>
+        <div>슬라임, 하늘을 나는 박쥐, 빠른 늑대, 단단한 골렘</div>
+        <div>닿으면 터지는 폭탄병, 쓰러지면 둘로 갈라지는 분열 슬라임</div>
+        <div>피해를 잘 막는 방패 해골, 동료를 치료하는 주술사</div>
+        <div>보스는 골렘 왕, 슬라임 왕, 박쥐 군주, 그리고 마지막 화산 거인입니다.</div>
       </div>
       <button class="btn" data-act="title">돌아가기</button>
     </div>`);

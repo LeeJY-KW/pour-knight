@@ -1,7 +1,7 @@
 // ===== Core game: cup pouring, ball physics, multiplier gates, combat =====
 const W = 270, H = 480, LS = 1.25; // LS = scale from layout design units (216x384)
 const GROUND_Y = 130, PIT_TOP = 150, WALL_L = 8, WALL_R = 262, RAIL_Y = 155, CUP_Y = 169, HUD_H = 22;
-const PORTAL_R = 11; // portal size (drawn and capture radius)
+const PORTAL_R = 17; // portal drawn radius; balls are captured inside the ring (R - 2)
 const BALL_R = 1.5, MAX_BALLS = 750, GRAV = 525, VMAX = 300;
 const HERO_X = 10, HERO_W = 14, HERO_H = 17;
 const BTN_SPEED = { x: W - 44, y: 25, w: 21, h: 16 };
@@ -299,7 +299,7 @@ function update(dt) {
         w.cupBalls = Math.round(S.cupSize * (1 + 0.2 * S.quickReload)); w.refillT = 0;
         if (S.nova) novaBlast();
         if (S.overcharge) w.goldPour = Math.round(w.cupBalls * 0.15 * S.overcharge);
-        addPop(w.cupX, CUP_Y - 18, 'RELOAD', '#73eff7', 0.9);
+        addPop(w.cupX, CUP_Y - 18, 'RELOAD', '#73eff7', 0.9, 2);
         SFX.play('reload');
       }
     } else w.refillT = 0;
@@ -533,7 +533,7 @@ function stepBalls(dt) {
     if (!b.tele) {
       for (const p of w.portals) {
         const dx = b.x - p.ax, dy = b.y - p.ay;
-        if (dx * dx + dy * dy < PORTAL_R * PORTAL_R) {
+        if (dx * dx + dy * dy < (PORTAL_R - 2) * (PORTAL_R - 2)) {
           b.tele = true; b.mask = 0;
           b.x = p.bx + rand(-3, 3); b.y = p.by; b.vx = rand(-30, 30); b.vy = 30;
           p.flash = 0.15; warped = true;
@@ -639,7 +639,7 @@ function multiplyBall(b, gt, extra = 0) {
   b.vx += rand(-18, 18);
   gt.flash = 0.1;
   if (S && S.gateJackpot && Math.random() < 0.02 * S.gateJackpot && ready('jackpot', 2.5)) {
-    addPop(b.x, gt.y - 12, 'JACKPOT', '#ffcd75', 0.9);
+    addPop(b.x, gt.y - 12, 'JACKPOT', '#ffcd75', 0.9, 2);
     giveBalls(8, b.x, gt.y);
   }
   if (Math.random() < 0.3 && w.parts.length < 260) {
@@ -679,7 +679,7 @@ function collectBall(b) {
   if (b.kind === 2 && S.prism) { for (const k of ELEMS) w.elem[k] += 10; w.ammo += 40; addPop(b.x, H - 24, 'PRISM', '#d6a8ff', 0.8); }
   if (b.kind === 4 && S.rubyHeart && S.hp < S.maxHp && ready('rubyHeart', 1)) { S.hp++; addPop(HERO_X + 7, GROUND_Y - 30, '+1', '#ef4f5f', 0.5); }
   if (b.kind === 5) {
-    addPop(b.x, H - 24, 'DIAMOND', '#e8fbff', 1);
+    addPop(b.x, H - 24, 'DIAMOND', '#e8fbff', 1, 2);
     if (S.diamondCut) {
       const dmg = S.cupSize * S.atkMul * 1.5;
       for (const e of w.enemies) if (e.hp > 0 && e.x < W) damageEnemy(e, dmg, true, true);
@@ -894,7 +894,7 @@ function damageEnemy(e, dmg, crit, quiet) {
   e.flash = 0.08;
   if (dmg >= 1000) unlock('hit1k');
   if (!quiet || w.pops.length < 12) {
-    if (w.pops.length < 18) addPop(e.x + e.w / 2 + rand(-3, 3), e.y - 8, fmt(Math.max(1, dmg)), crit ? '#ffcd75' : '#f4f4f4', 0.5, crit ? 3 : 2);
+    if (w.pops.length < 18) addPop(e.x + e.w / 2 + rand(-3, 3), e.y - 8, fmt(Math.max(1, dmg)), crit ? '#ffcd75' : '#f4f4f4', 0.5, crit ? 2 : 1);
   }
   if (w.parts.length < 260) {
     for (let k = 0; k < 2; k++) w.parts.push({ x: e.x + 2, y: e.y + e.h / 2, vx: rand(-25, 40), vy: rand(-50, 12), life: 0.25, max: 0.25, col: '#f4f4f4', g: 250 });
@@ -1105,7 +1105,7 @@ function heroHit(e, dmgOverride) {
   w.heroFlash = 0.15;
   w.hurtT = 0.35;
   w.shake = Math.max(w.shake, e.boss ? 6 : 2);
-  addPop(HERO_X + 7, GROUND_Y - 26, '-' + d, '#ef7d57', 0.6);
+  addPop(HERO_X + 7, GROUND_Y - 26, '-' + d, '#ef7d57', 0.6, 2);
   SFX.play('hurt');
   if (S.hurtRefill) giveBalls(6 * S.hurtRefill, HERO_X + 7, GROUND_Y - 10);
   if (S.thorns && e.hp > 0 && !e.bomb) {
@@ -1135,7 +1135,7 @@ function heroDown() {
 }
 
 // ---------------------------------------------------------------- fx
-function addPop(x, y, txt, col, life = 0.6, s = 2) {
+function addPop(x, y, txt, col, life = 0.6, s = 1) {
   world.pops.push({ x, y, txt, col, life, max: life, s });
 }
 
@@ -1474,7 +1474,7 @@ function drawCombo() {
   const big = w.combo >= 20;
   const col = PALETTE_FX[Math.floor(w.t * 10) % 4];
   ctx.globalAlpha = clamp(w.comboShow * 2, 0, 1);
-  drawText(ctx, w.combo + ' COMBO', W - 6, 46, col, big ? 3 : 2, 'right');
+  drawText(ctx, w.combo + ' COMBO', W - 6, 46, col, big ? 2 : 1, 'right');
   ctx.globalAlpha = 1;
 }
 
@@ -1636,15 +1636,14 @@ function drawStructures() {
     for (const [px, py, c1, c2, label] of [[p.ax, p.ay, '#9b59d0', '#d6a8ff', 'IN'], [p.bx, p.by, '#3b5dc9', '#73eff7', 'OUT']]) {
       const cx = Math.round(px), cy = Math.round(py);
       pxDisc(cx, cy, R, '#1a1c2c');
-      pxDisc(cx, cy, R - 2, p.flash > 0 ? '#f4f4f4' : c1);
-      pxDisc(cx, cy, R - 6, '#1a1c2c'); // swirl hole
-      pxDisc(cx, cy, R - 8, c2);
-      for (let k = 0; k < 8; k++) { // orbiting sparks
+      pxDisc(cx, cy, R - 1, p.flash > 0 ? '#f4f4f4' : c1); // glowing ring
+      pxDisc(cx, cy, R - 4, '#1a1c2c'); // dark swirl hole that holds the label
+      for (let k = 0; k < 8; k++) { // sparks swirling along the ring
         const an = (label === 'IN' ? spin : -spin) + k / 8 * Math.PI * 2;
         ctx.fillStyle = k % 2 ? c2 : '#f4f4f4';
-        ctx.fillRect(Math.round(px + Math.cos(an) * (R + 1)), Math.round(py + Math.sin(an) * (R + 1)), 2, 2);
+        ctx.fillRect(Math.round(px + Math.cos(an) * (R - 2.5)), Math.round(py + Math.sin(an) * (R - 2.5)), 1, 1);
       }
-      drawText(ctx, label, cx, cy - R - 13, c2, 2, 'center');
+      drawText(ctx, label, cx + 1, cy - 4, c2, 2, 'center', null);
     }
   }
   for (const s of w.springs) {
@@ -1787,7 +1786,7 @@ function drawBanner() {
   if (p < 0.15) a = p / 0.15; else if (p > 0.75) a = (1 - p) / 0.25;
   ctx.globalAlpha = clamp(a, 0, 1);
   const y = 54 + (p < 0.15 ? -(1 - p / 0.15) * 8 : 0);
-  const s = textWidth(b.txt, 3) <= W - 16 ? 3 : 2;
+  const s = 2;
   drawText(ctx, b.txt, W / 2, y, b.col, s, 'center');
   ctx.globalAlpha = 1;
 }
