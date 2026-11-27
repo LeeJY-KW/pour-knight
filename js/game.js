@@ -1,6 +1,7 @@
 // ===== Core game: cup pouring, ball physics, multiplier gates, combat =====
 const W = 270, H = 480, LS = 1.25; // LS = scale from layout design units (216x384)
 const GROUND_Y = 130, PIT_TOP = 150, WALL_L = 8, WALL_R = 262, RAIL_Y = 155, CUP_Y = 169, HUD_H = 22;
+const PORTAL_R = 11; // portal size (drawn and capture radius)
 const BALL_R = 1.5, MAX_BALLS = 750, GRAV = 525, VMAX = 300;
 const HERO_X = 10, HERO_W = 14, HERO_H = 17;
 const BTN_SPEED = { x: W - 44, y: 25, w: 21, h: 16 };
@@ -221,7 +222,16 @@ function buildLayout(L, bonus) {
   w.bumpers = (L.bumpers || []).map(b => ({ cx: b[0] * LS, cy: b[1] * LS, r: (b[2] || 6) * LS, orb: (b[3] || 0) * LS, spd: b[4] || 0, ph: b[5] || 0, x: b[0] * LS, y: b[1] * LS, flash: 0 }));
   w.portals = (L.portals || []).map(p => ({ ax: p[0] * LS, ay: p[1] * LS, bx: p[2] * LS, by: p[3] * LS, flash: 0 }));
   w.spinners = (L.spinners || []).map(s => ({ cx: s[0] * LS, cy: s[1] * LS, len: s[2] * LS, spd: s[3], ang: Math.random() * 6.28, x1: 0, y1: 0, x2: 0, y2: 0 }));
-  w.springs = (L.springs || []).map(s => ({ x: s[0] * LS, y: Math.round(s[1] * LS), w: s[2] * LS, comp: 0 }));
+  w.springs = (L.springs || []).map(s => {
+    const x1 = s[0] * LS, y1 = s[1] * LS, x2 = s[2] * LS, y2 = s[3] * LS;
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    let nx = dy / len, ny = -dx / len;
+    if (ny > 0) { nx = -nx; ny = -ny; } // normal always points up, away from the pad
+    return {
+      x1, y1, x2, y2, nx, ny, comp: 0, top: Math.min(y1, y2),
+      minX: Math.min(x1, x2) - 6, maxX: Math.max(x1, x2) + 6, minY: Math.min(y1, y2) - 6, maxY: Math.max(y1, y2) + 6,
+    };
+  });
   w.zones = (L.zones || [{ x: 6, w: 204, m: 1 }]).map(z => ({ x0: Math.max(WALL_L, z.x * LS), x1: Math.min(WALL_R, (z.x + z.w) * LS), m: z.m }));
   updateStructures(0);
   const mkSeg = (x1, y1, x2, y2, r) => ({
@@ -523,7 +533,7 @@ function stepBalls(dt) {
     if (!b.tele) {
       for (const p of w.portals) {
         const dx = b.x - p.ax, dy = b.y - p.ay;
-        if (dx * dx + dy * dy < 64) {
+        if (dx * dx + dy * dy < PORTAL_R * PORTAL_R) {
           b.tele = true; b.mask = 0;
           b.x = p.bx + rand(-3, 3); b.y = p.by; b.vx = rand(-30, 30); b.vy = 30;
           p.flash = 0.15; warped = true;
@@ -572,16 +582,19 @@ function stepBalls(dt) {
         SFX.play('bump');
       }
     }
-    // springs: launch balls back up (twice per ball at most); the first launch re-arms the gates above
+    // springs: sloped pads that launch balls back up along their normal (twice per ball at most).
+    // The first launch re-arms the gates above. Used-up balls just roll off the slope.
     for (const sp of w.springs) {
-      if (b.vy > 0 && py <= sp.y && b.y >= sp.y - 1 && b.x >= sp.x && b.x <= sp.x + sp.w) {
-        if (b.spr < 2) {
-          if (b.spr === 0) w.gates.forEach((o, j) => { if (o.y < sp.y) b.mask &= ~(1 << j); });
-          b.spr++;
-          b.y = sp.y - 2; b.vy = -rand(350, 400); b.vx += rand(-45, 45);
-          sp.comp = 0.15;
-          SFX.play('spring');
-        } else { b.y = sp.y - 2; b.vy = -b.vy * 0.3; }
+      if (b.x < sp.minX || b.x > sp.maxX || b.y < sp.minY || b.y > sp.maxY) continue;
+      const into = b.vx * sp.nx + b.vy * sp.ny < -20; // moving into the pad, not resting on it
+      if (!collideSeg(b, sp.x1, sp.y1, sp.x2, sp.y2, 2)) continue;
+      if (into && b.spr < 2) {
+        if (b.spr === 0) w.gates.forEach((o, j) => { if (o.y < sp.top) b.mask &= ~(1 << j); });
+        b.spr++;
+        const speed = rand(350, 400);
+        b.vy = -speed; b.vx = sp.nx * speed * 0.45 + rand(-25, 25);
+        sp.comp = 0.15;
+        SFX.play('spring');
       }
     }
     // spinners: rotating bars that knock balls around
@@ -604,7 +617,11 @@ function stepBalls(dt) {
       else if (Math.abs(b.x - gt.x - gt.w) < 4) collideSeg(b, gt.x + gt.w, gt.y - 9, gt.x + gt.w, gt.y + 9, 1);
     }
 
-    if (b.dead || b.y > H - 6 || b.age > 12) {
+    // a ball that has (nearly) stopped somewhere for a while counts as landed,
+    // so nothing perched on a peg, post or pad can block the cup reload
+    if (b.vx * b.vx + b.vy * b.vy < 400) b.still = (b.still || 0) + dt; else b.still = 0;
+
+    if (b.dead || b.y > H - 6 || b.age > 12 || b.still > 1.2) {
       if (!b.dead) collectBall(b);
       else if (w.parts.length < 280) w.parts.push({ x: b.x, y: b.y, vx: rand(-20, 20), vy: rand(-30, 0), life: 0.25, max: 0.25, col: '#b13e53', g: 100 });
       balls[i] = balls[balls.length - 1];
@@ -1615,32 +1632,37 @@ function drawStructures() {
     drawText(ctx, 'x2', cx + 1, cy - 2, '#1a1c2c', 1, 'center', null);
   }
   for (const p of w.portals) {
-    const spin = w.t * 4;
-    for (const [px, py, c1, c2] of [[p.ax, p.ay, '#9b59d0', '#d6a8ff'], [p.bx, p.by, '#3b5dc9', '#73eff7']]) {
-      pxDisc(Math.round(px), Math.round(py), 7, '#1a1c2c');
-      pxDisc(Math.round(px), Math.round(py), 5, p.flash > 0 ? '#f4f4f4' : c1);
-      for (let k = 0; k < 6; k++) {
-        const an = spin + k / 6 * Math.PI * 2;
+    const spin = w.t * 4, R = PORTAL_R;
+    for (const [px, py, c1, c2, label] of [[p.ax, p.ay, '#9b59d0', '#d6a8ff', 'IN'], [p.bx, p.by, '#3b5dc9', '#73eff7', 'OUT']]) {
+      const cx = Math.round(px), cy = Math.round(py);
+      pxDisc(cx, cy, R, '#1a1c2c');
+      pxDisc(cx, cy, R - 2, p.flash > 0 ? '#f4f4f4' : c1);
+      pxDisc(cx, cy, R - 6, '#1a1c2c'); // swirl hole
+      pxDisc(cx, cy, R - 8, c2);
+      for (let k = 0; k < 8; k++) { // orbiting sparks
+        const an = (label === 'IN' ? spin : -spin) + k / 8 * Math.PI * 2;
         ctx.fillStyle = k % 2 ? c2 : '#f4f4f4';
-        ctx.fillRect(Math.round(px + Math.cos(an) * 7), Math.round(py + Math.sin(an) * 7), 1, 1);
+        ctx.fillRect(Math.round(px + Math.cos(an) * (R + 1)), Math.round(py + Math.sin(an) * (R + 1)), 2, 2);
       }
+      drawText(ctx, label, cx, cy - R - 13, c2, 2, 'center');
     }
-    drawText(ctx, 'IN', Math.round(p.ax), Math.round(p.ay) - 2, '#f4f4f4', 1, 'center', null);
-    drawText(ctx, 'OUT', Math.round(p.bx), Math.round(p.by) - 2, '#f4f4f4', 1, 'center', null);
   }
   for (const s of w.springs) {
-    const x = Math.round(s.x), y = s.y, sw = Math.round(s.w);
     const c = s.comp > 0 ? 3 : 0;
-    // coil
-    ctx.fillStyle = '#566c86';
-    for (let i = 0; i < 4; i++) {
-      const yy = y + 2 + c + i * (2 - c / 4);
-      ctx.fillRect(x + 3 + (i % 2 ? 2 : 0), Math.round(yy), sw - 8, 1);
+    const ox = -s.nx * c, oy = -s.ny * c; // plate pushed down into the coil when it fires
+    const bx = -s.nx * 10, by = -s.ny * 10; // base plate offset (below the pad)
+    // coils between base and plate
+    for (let i = 0; i < 5; i++) {
+      const t = (i + 0.5) / 5;
+      const px = s.x1 + (s.x2 - s.x1) * t, py = s.y1 + (s.y2 - s.y1) * t;
+      const zig = i % 2 ? 2 : -2;
+      pxLine(ctx, px + ox, py + oy, px + bx / 2 + zig, py + by / 2, 1, '#94b0c2');
+      pxLine(ctx, px + bx / 2 + zig, py + by / 2, px + bx, py + by, 1, '#566c86');
     }
-    ctx.fillStyle = '#1a1c2c'; ctx.fillRect(x - 1, y - 3 + c, sw + 2, 5);
-    ctx.fillStyle = s.comp > 0 ? '#ffcd75' : '#ef7d57'; ctx.fillRect(x, y - 2 + c, sw, 3);
-    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x, y - 2 + c, sw, 1);
-    ctx.fillStyle = '#1a1c2c'; ctx.fillRect(x - 1, y + 10, sw + 2, 2);
+    pxLine(ctx, s.x1 + bx, s.y1 + by, s.x2 + bx, s.y2 + by, 3, '#1a1c2c');
+    pxLine(ctx, s.x1 + ox, s.y1 + oy, s.x2 + ox, s.y2 + oy, 5, '#1a1c2c');
+    pxLine(ctx, s.x1 + ox, s.y1 + oy, s.x2 + ox, s.y2 + oy, 3, s.comp > 0 ? '#ffcd75' : '#ef7d57');
+    pxLine(ctx, s.x1 + ox, s.y1 + oy - 1, s.x2 + ox, s.y2 + oy - 1, 1, '#ffcd75');
   }
 }
 

@@ -67,7 +67,7 @@ const LAYOUTS = [
   },
   // ---- layouts with special structures
   // bumpers [x, y, r, orbitR?, orbitSpd?, phase?]  portals [inX, inY, outX, outY]  spinners [x, y, len, spd]
-  // springs [x, y, w]  zones [{x, w, m}] (bottom collector value multiplier)
+  // springs [x1, y1, x2, y2] (sloped pad; balls launch along its upward normal)  zones [{x, w, m}] (bottom collector value multiplier)
   // gate flags: rev (fling ball back up), trap (50% lose), goldify (ball value x3)
   {
     name: 'bumper field',
@@ -95,7 +95,7 @@ const LAYOUTS = [
   {
     name: 'springs',
     gates: [{ x: 58, y: 182, w: 100, m: 3 }, { x: 14, y: 250, w: 70, m: 2 }, { x: 132, y: 250, w: 70, m: 2 }],
-    springs: [[12, 336, 40], [164, 336, 40]],
+    springs: [[10, 326, 50, 344], [206, 326, 166, 344]], // high at the wall, sloping toward the middle
     segs: [[56, 300, 96, 322], [160, 300, 120, 322]],
     zones: [{ x: 96, w: 24, m: 3 }],
   },
@@ -119,8 +119,8 @@ const LAYOUTS = [
     name: 'orbit',
     gates: [{ x: 28, y: 176, w: 160, m: 2 }, { x: 58, y: 314, w: 100, m: 3, move: 30, spd: 0.8 }],
     bumpers: [[108, 244, 6, 34, 1.3, 0], [108, 244, 6, 34, 1.3, Math.PI]],
-    portals: [[190, 352, 30, 166]],
-    springs: [[12, 352, 30]],
+    portals: [[190, 352, 30, 158]],
+    springs: [[10, 344, 42, 360]],
     segs: [],
   },
 ];
